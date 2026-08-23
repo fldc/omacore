@@ -53,6 +53,7 @@ Panel {
     if (!pods.hasEarbuds) return rows
     for (var i = 0; i < modeValues.length; i++) rows.push("mode:" + modeValues[i])
     for (var s = 0; s < sections.length; s++) {
+      if (!root.isExpanded(sections[s].key)) continue
       var list = root.specsFor(sections[s].key)
       for (var j = 0; j < list.length; j++) {
         var kind = list[j].kind
@@ -91,6 +92,28 @@ Panel {
     if (at < 0) return
     cursorActive = true
     cursorIndex = at
+  }
+
+  // --- collapsible sections ----------------------------------------------
+  // Only the sections marked collapsible (Settings, Buttons) start closed;
+  // every other section is always shown. See Model.SECTIONS[].collapsible.
+  property var _expanded: ({})
+  function isCollapsible(key) {
+    for (var i = 0; i < sections.length; i++)
+      if (sections[i].key === key) return sections[i].collapsible === true
+    return false
+  }
+  function isExpanded(key) {
+    if (!root.isCollapsible(key)) return true
+    return _expanded[key] === true
+  }
+  function toggleSection(key) {
+    // Fresh object so bindings (which read _expanded through isExpanded) recompute.
+    var copy = {}
+    for (var k in _expanded) copy[k] = _expanded[k]
+    copy[key] = !(_expanded[key] === true)
+    _expanded = copy
+    cursorActive = false
   }
 
   visible: !hideWhenDisconnected || pods.hasEarbuds
@@ -223,28 +246,65 @@ Panel {
               readonly property var specs: root.specsFor(sectionKey)
               readonly property bool hasBattery: sectionKey === "battery"
                 && Model.hasBattery(pods.schemaMap) && pods.batteryRows.length > 0
-              readonly property bool showSection: hasBattery || sectionKey === "soundMode" || specs.length > 0
+              readonly property bool hasContent: hasBattery || sectionKey === "soundMode" || specs.length > 0
+              readonly property bool collapsible: root.isCollapsible(sectionKey)
+              readonly property bool expanded: root.isExpanded(sectionKey)
               width: parent.width
-              implicitHeight: showSection ? content.implicitHeight : 0
+              implicitHeight: hasContent ? content.implicitHeight : 0
 
               Column {
                 id: content
                 width: parent.width
-                spacing: Style.space(10)
-                visible: showSection
+                spacing: Style.space(8)
+                visible: hasContent
 
-                PanelSectionHeader {
+                // Collapsible sections get a clickable header with a chevron;
+                // everything else is a plain, always-visible header.
+                Item {
+                  id: sectionHeader
                   width: parent.width
-                  text: sectionTitle
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
+                  implicitHeight: headerRow.implicitHeight
+                  visible: hasContent
+
+                  RowLayout {
+                    id: headerRow
+                    width: parent.width
+                    spacing: Style.space(8)
+
+                    Text {
+                      Layout.fillWidth: true
+                      text: sectionTitle
+                      color: root.foreground
+                      opacity: 0.8
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.subtitle
+                      elide: Text.ElideRight
+                    }
+
+                    Text {
+                      visible: collapsible
+                      text: expanded ? "󰅃" : "󰅀"
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.icon
+                      Layout.preferredWidth: Style.space(18)
+                      horizontalAlignment: Text.AlignRight
+                    }
+                  }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: collapsible
+                    cursorShape: collapsible ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: { if (collapsible) root.toggleSection(sectionKey) }
+                  }
                 }
 
                 Column {
                   width: parent.width
                   spacing: Style.space(6)
+                  visible: expanded
 
-                  // Battery rows (single or multi).
                   Repeater {
                     model: hasBattery ? pods.batteryRows : []
                     delegate: LevelRow {
@@ -256,7 +316,6 @@ Panel {
                     }
                   }
 
-                  // Sound-mode picker (the three modes).
                   Repeater {
                     model: sectionKey === "soundMode" ? root.modeValues : []
                     delegate: OptionRow {
@@ -269,9 +328,8 @@ Panel {
                     }
                   }
 
-                  // Other rows in this section (sub-modes, toggles, selects, info…).
                   Repeater {
-                    model: specs
+                    model: expanded ? specs : []
                     delegate: SpecRow {
                       required property var modelData
                       spec: modelData
@@ -296,10 +354,6 @@ Panel {
       }
     }
   }
-
-  // ---------------------------------------------------------------------
-  // Row components
-  // ---------------------------------------------------------------------
 
   component LevelRow: Item {
     id: levelRow
@@ -488,7 +542,8 @@ Panel {
         opacity: 0.75
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
-        Layout.preferredWidth: Style.space(110)
+        Layout.preferredWidth: Style.space(116)
+        elide: Text.ElideRight
       }
       Dropdown {
         id: dd

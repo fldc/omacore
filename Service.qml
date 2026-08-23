@@ -64,13 +64,11 @@ Item {
     return n
   }
 
-  // --- accessors for the panel ---------------------------------------------
   function value(id) { return valuesMap[id] }
   function present(id) { return id in schemaMap }
   function schema(id) { return schemaMap[id] }
   function currentMode() { return String(valuesMap[Model.AMBIENT_SOUND_MODE] || "") }
 
-  // --- main tick -----------------------------------------------------------
   function refresh() {
     if (macAddress === "") {
       connected = false
@@ -189,7 +187,6 @@ Item {
     return String(value)
   }
 
-  // --- writing -------------------------------------------------------------
   // Writes are optimistic on the value map (the panel shows the intended value
   // immediately) and debounced into one batched `-s … -s …` invocation, so a
   // burst of changes (stepping a level, opening a dropdown) costs a single BLE

@@ -10,11 +10,12 @@
 // (R60i NC / P31i, …) and adapts to whatever the firmware reports.
 // ---------------------------------------------------------------------------
 
-// Known settings the widget can render, in display order within their section.
+// Known settings the widget renders, in display order within their section.
 // For "select"/"range" kinds the options/min/max/step come from the live schema;
 // "when" (if present) gates whether the row shows, based on the value map.
+// Only Settings and Buttons are collapsible in the panel (see Panel.qml); the rest
+// of these sections are always shown.
 var KNOWN_SETTINGS = [
-  // --- sound modes (the mode picker is drawn specially in Panel.qml) ---
   { id: "transparencyMode", section: "soundMode", label: "Transparency mode", kind: "select", when: "TransparencyMode" },
   { id: "manualTransparency", section: "soundMode", label: "Transparency level", kind: "range", when: "TransparencyManual" },
   { id: "noiseCancelingMode", section: "soundMode", label: "ANC mode", kind: "select", when: "NoiseCancelingMode" },
@@ -22,42 +23,33 @@ var KNOWN_SETTINGS = [
   { id: "multiSceneNoiseCanceling", section: "soundMode", label: "Multi-scene", kind: "select", when: "NoiseCancelingMultiScene" },
   { id: "realTimeAdaptiveNoiseCanceling", section: "soundMode", label: "Real-time adaptive ANC", kind: "toggle", when: "NoiseCanceling" },
   { id: "windNoiseSuppression", section: "soundMode", label: "Wind noise suppression", kind: "toggle", when: "NoiseCanceling" },
-  // --- sound effects (spatial audio; earbuds) ---
   { id: "spatialAudio", section: "soundEffects", label: "Spatial audio", kind: "toggle" },
   { id: "spatialAudioMode", section: "soundEffects", label: "Sound effect", kind: "select" },
-  // --- equalizer (headphones) ---
   { id: "presetEqualizerProfile", section: "equalizer", label: "Preset EQ", kind: "select" },
-  // --- button configuration ---
   { id: "normalModeInCycle", section: "button", label: "Normal in cycle", kind: "toggle" },
   { id: "transparencyModeInCycle", section: "button", label: "Transparency in cycle", kind: "toggle" },
   { id: "noiseCancelingModeInCycle", section: "button", label: "Noise cancelling in cycle", kind: "toggle" },
-  // --- dual connections ---
-  { id: "dualConnections", section: "dual", label: "Dual connections", kind: "toggle" },
-  // --- miscellaneous ---
+  { id: "dualConnections", section: "misc", label: "Dual connections", kind: "toggle" },
   { id: "ldac", section: "misc", label: "LDAC", kind: "toggle" },
   { id: "voicePrompt", section: "misc", label: "Voice prompts", kind: "toggle" },
   { id: "lowBatteryPrompt", section: "misc", label: "Low battery prompt", kind: "toggle" },
   { id: "autoPowerOff", section: "misc", label: "Auto power off", kind: "select" },
-  // --- volume limiter ---
   { id: "limitHighVolume", section: "volumeLimit", label: "Limit high volume", kind: "toggle" },
   { id: "limitHighVolumeDbLimit", section: "volumeLimit", label: "Volume limit (dB)", kind: "range", unit: " dB" },
-  { id: "limitHighVolumeRefreshRate", section: "volumeLimit", label: "Refresh rate", kind: "select" },
-  // --- device information ---
-  { id: "serialNumber", section: "deviceInfo", label: "Serial number", kind: "info" },
-  { id: "firmwareVersion", section: "deviceInfo", label: "Firmware", kind: "info" }
+  { id: "limitHighVolumeRefreshRate", section: "volumeLimit", label: "Refresh rate", kind: "select" }
 ]
 
 // Section order and titles. "battery" is drawn specially (single vs multi).
+// Only the sections marked collapsible (Settings, Buttons, Volume Limiter) start
+// closed; the rest are always shown. Device info is intentionally omitted.
 var SECTIONS = [
   { key: "battery", title: "BATTERY" },
   { key: "soundMode", title: "SOUND MODE" },
-  { key: "soundEffects", title: "SOUND EFFECTS" },
   { key: "equalizer", title: "EQUALIZER" },
-  { key: "button", title: "BUTTONS" },
-  { key: "dual", title: "DUAL CONNECTIONS" },
-  { key: "misc", title: "SETTINGS" },
-  { key: "volumeLimit", title: "VOLUME LIMITER" },
-  { key: "deviceInfo", title: "DEVICE" }
+  { key: "misc", title: "SETTINGS", collapsible: true },
+  { key: "button", title: "BUTTONS", collapsible: true },
+  { key: "volumeLimit", title: "VOLUME LIMITER", collapsible: true },
+  { key: "soundEffects", title: "SOUND EFFECTS" }
 ]
 
 // Battery-setting ids: the single-battery (over-ear) variant versus the
