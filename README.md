@@ -1,7 +1,7 @@
 <h1 align="center">Omacore</h1>
 
 <p align="center">
-  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, and Sound Effects, drawn in Omarchy's own panel idiom.
+  Soundcore headphones and earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode settings, and the device's other settings, drawn in Omarchy's own panel idiom.
 </p>
 
 <p align="center">
@@ -18,47 +18,54 @@ Then follow **Setup** below to point it at your earbuds.
 
 ## What it shows
 
-- **Which earbuds** — the panel title shows the friendly model name (e.g.
-  "Soundcore R60i NC") from the "OpenSCQ30 model id" setting, not a generic
-  "Soundcore".
-- **Battery** for the left earbud, the right earbud and the case. Soundcore's
-  hardware only reports ten discrete steps, so the widget shows a rounded
-  percent rather than a raw sensor value.
-- **Sound mode** — Noise Cancellation, Transparency or Normal — with the
-  active mode checked, and one click or `n`/`t`/`o` to switch it. Selecting a
-  mode reveals that mode's own settings below it, mirroring Soundcore's app:
-  - **Noise Cancellation** shows an inline Mode dropdown (Manual / Adaptive /
-    Multi-Scene) plus a Real-time Adaptive ANC toggle — shown regardless of
-    which of the three is selected, same as the Soundcore app:
-    - **Manual** additionally shows a 1-5 intensity level.
-    - **Multi-Scene** additionally shows a Transport / Outdoor / Indoor
-      picker as three side-by-side buttons.
-    - **Wind noise suppression** — a toggle, one click or `w` (while in
-      Noise Cancellation) to flip it.
-  - **Transparency** shows a Fully Transparent / Vocal Mode picker.
-  - **Normal** shows none of the above — only Sound Effects, below.
-- **Sound Effects** (Soundcore's spatial audio) — Music / Movie / Gaming as
-  three side-by-side buttons, always shown regardless of sound mode.
+The panel is schema-driven: on connect it runs `openscq30 device -a <mac>
+list-settings --json` and renders only the sections and rows the device actually
+exposes. Depending on the device it can show:
 
-All of the above are only shown when openscq30 reports the setting at all
-(model and firmware dependent — confirmed present on the R60i NC / P31i).
-OpenSCQ30 exposes still more per-device settings (button remapping, EQ,
-dual connections, …) — run `openscq30 device -a <mac> list-settings --json`
-to see everything your earbuds support, and extend
-`Model.js`/`Service.qml`/`Panel.qml` the same way the rest is wired if you
-want more of it in the bar.
+- **Which device** — the panel title shows the friendly model name from the
+  "OpenSCQ30 model id" setting, not a generic "Soundcore".
+- **Battery** — a single headphone battery, or Left / Right / Case for earbuds,
+  shown as a rounded percent (Soundcore's hardware reports ten discrete steps).
+- **Sound mode** — Noise Cancellation, Transparency or Normal, switched with one
+  click or `n`/`t`/`o`. Each mode reveals its own settings when the firmware
+  reports them: ANC mode (Manual / Adaptive / Multi-Scene) with a 1-5 manual
+  level or scene picker, real-time adaptive ANC, wind noise suppression, and the
+  transparency mode (Talk Mode / Fully Transparent / Vocal Mode) with its level.
+- **Equalizer** — the preset equalizer profile.
+- **Settings** (collapsible) — LDAC, voice prompts, low-battery prompt, auto
+  power-off, dual connections.
+- **Buttons** (collapsible) — the in-cycle mode toggles.
+- **Volume limiter** (collapsible) — limit-high-volume toggle, dB limit and
+  refresh rate.
+- **Sound Effects** (earbuds) — spatial audio / sound-effect mode.
+
+Battery and Sound Mode are always open; Settings, Buttons and Volume Limiter are
+collapsible groups. The bar icon is a headphone glyph for over-ear models and the
+earbuds glyph otherwise. Everything above is only shown when the device reports
+the setting at all, so `openscq30 device -a <mac> list-settings --json` is the
+source of truth; each setting is wired through
+`Model.js`/`Service.qml`/`Panel.qml`.
 
 ## How it works
 
 Unlike [omapods](https://github.com/thisisgm/omarchy-pods) (AirPods, which
 speaks Apple's own BLE protocol via a background daemon), there is no
 background daemon here. [OpenSCQ30](https://github.com/Oppzippy/OpenSCQ30)'s
-CLI opens a fresh Bluetooth connection on every invocation, so this widget
-**polls**: a
-timer runs `openscq30 device -a <mac> setting -g ... --json` every
-`pollIntervalSec` seconds (30 by default) and parses the reply. Clicking any
-row (sound mode, ANC mode, scene, sound effect, a toggle, …) runs
-`setting -s <settingId>=<value>` and re-polls afterward.
+CLI opens a fresh Bluetooth connection on every invocation, so this widget:
+
+1. Discovers the device's settings with
+   `openscq30 device -a <mac> list-settings --json`.
+2. Polls only the settings it knows how to render that the device exposes, via
+   `openscq30 device -a <mac> setting -g … --json` every `pollIntervalSec`
+   seconds (30 by default).
+3. Applies a click by running `setting -s <settingId>=<value>`.
+
+Every `openscq30` invocation is wrapped in an OS `flock`, so the one bar per
+monitor never opens two BLE connections at once (`UUID already registered`).
+Rapid writes are debounced into a single batched `-s … -s …` invocation, and the
+panel holds the intended value optimistically until the device confirms it on the
+next poll. Disconnects are debounced so a transient BLE hiccup doesn't flap the
+icon or spam a notification.
 
 ## Requirements
 

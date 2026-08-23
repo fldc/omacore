@@ -1,33 +1,58 @@
 import QtQuick
 import qs.Commons
 
-// Drawn rather than shipped as an SVG: at bar size the stems are lost to rasterisation.
+// The bar/hero icon for the Soundcore widget. Over-ear models get the Nerd Font
+// "headphones" glyph (U+F02B) drawn in whatever family the theme resolves for the
+// bar; earbud models get the two-buds glyph drawn with rectangles (the glyph sets
+// don't all ship a clean buds glyph, and at bar size the stems would be lost to
+// rasterisation anyway).
 Item {
   id: root
 
   property real iconSize: 16
   property color color: Color.foreground
+  property string type: "earbuds"
+  // Bind this to the bar's fontFamily so the glyph draws in the theme's Nerd Font.
+  property string fontFamily: Style.font.family
 
-  readonly property real headSize: iconSize * 0.5
-  readonly property real stemWidth: iconSize * 0.22
-  readonly property real stemHeight: iconSize * 0.34
-  readonly property real budSpacing: iconSize * 0.16
+  readonly property bool headphones: type === "headphones"
 
-  // Two buds side by side are wider than they are tall, so the implicit
-  // size follows the actual drawn content rather than a square iconSize box
-  // — otherwise a Loader with no anchors.fill (e.g. PanelHero) sizes the
-  // icon too small and crops it.
-  implicitWidth: headSize * 2 + budSpacing
-  implicitHeight: headSize + stemHeight
+  // The Nerd Font glyph's visible height is roughly 70% of its pixel size, so
+  // scale the pixel size up a bit to land visually near iconSize.
+  readonly property real glyphSize: Math.round(iconSize * 1.4)
+
+  // Earbuds: two buds side by side are wider than they are tall, so the implicit
+  // size follows the actual drawn content rather than a square iconSize box —
+  // otherwise a Loader with no anchors.fill (e.g. PanelHero) sizes the icon too
+  // small and crops it.
+  readonly property real earbudHeadSize: iconSize * 0.5
+  readonly property real earbudStemWidth: iconSize * 0.22
+  readonly property real earbudStemHeight: iconSize * 0.34
+  readonly property real earbudBudSpacing: iconSize * 0.16
+
+  implicitWidth: headphones ? glyphSize : earbudHeadSize * 2 + earbudBudSpacing
+  implicitHeight: headphones ? glyphSize : earbudHeadSize + earbudStemHeight
   width: implicitWidth
   height: implicitHeight
 
-  Row {
+  Text {
+    id: headphoneGlyph
+    visible: root.headphones
     anchors.centerIn: parent
-    spacing: root.budSpacing
+    text: "󰋋"
+    font.family: root.fontFamily
+    font.pixelSize: root.glyphSize
+    color: root.color
+  }
 
-    Bud { head: root.headSize; stemW: root.stemWidth; stemH: root.stemHeight; ink: root.color }
-    Bud { head: root.headSize; stemW: root.stemWidth; stemH: root.stemHeight; ink: root.color }
+  Row {
+    id: budRow
+    visible: !root.headphones
+    anchors.centerIn: parent
+    spacing: root.earbudBudSpacing
+
+    Bud { head: root.earbudHeadSize; stemW: root.earbudStemWidth; stemH: root.earbudStemHeight; ink: root.color }
+    Bud { head: root.earbudHeadSize; stemW: root.earbudStemWidth; stemH: root.earbudStemHeight; ink: root.color }
   }
 
   // A stubbier capsule than a stemmed earbud, closer to Soundcore's own silhouette.

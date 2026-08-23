@@ -5,7 +5,7 @@
   "version": "0.2.0",
   "author": "Biraj",
   "license": "MIT",
-  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI.",
+  "description": "Battery, ambient sound mode and ANC settings for Soundcore headphones and earbuds in the Omarchy bar, via the OpenSCQ30 CLI.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,13 +14,13 @@
   },
   "barWidget": {
     "displayName": "Soundcore",
-    "description": "Per-pod and case battery, ambient sound mode (Noise Cancelling / Transparency / Normal) with per-mode settings, and Sound Effects.",
+    "description": "Battery, ambient sound mode (Noise Cancelling / Transparency / Normal) with per-mode settings, plus the device's other settings.",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
       "macAddress": "",
-      "model": "SoundcoreD1202C",
+      "model": "SoundcoreA3040",
       "pollIntervalSec": 30,
       "ctlPath": "",
       "hideWhenDisconnected": true,
@@ -38,8 +38,8 @@
         "key": "model",
         "type": "string",
         "label": "OpenSCQ30 model id",
-        "defaultValue": "SoundcoreD1202C",
-        "description": "SoundcoreD1202C = Soundcore R60i NC, SoundcoreD1202 = P31i (see `openscq30 list-models`). Only needed for `paired-devices add`; the widget itself does not send this."
+        "defaultValue": "SoundcoreA3040",
+        "description": "Use the model id from `openscq30 list-models` (e.g. SoundcoreA3040 = Space Q45, SoundcoreD1202C = R60i NC). Only needed for `paired-devices add`; the widget itself does not send this."
       },
       {
         "key": "pollIntervalSec",

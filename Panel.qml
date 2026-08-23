@@ -15,6 +15,9 @@ Panel {
 
   property int cursorIndex: 0
   property bool cursorActive: false
+  // Dropdowns registered by SpecRow delegates (keyed by setting id) so the keyboard
+  // cursor can open them.
+  property var _dropdowns: ({})
 
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -23,33 +26,39 @@ Panel {
   readonly property color barIconColor: pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== ""
-  readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
-  readonly property bool transparencySectionVisible: pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported
-  readonly property var ncModeOptions: Model.NC_SUBMODES.map(function (m) { return { value: m, label: Model.ncSubModeLabel(m) } })
+
+  readonly property var sections: Model.SECTIONS
+  readonly property var modeValues: Model.optionValues(pods.schemaMap, Model.AMBIENT_SOUND_MODE)
+
+  function specsFor(sectionKey) {
+    var out = []
+    for (var i = 0; i < Model.KNOWN_SETTINGS.length; i++) {
+      var spec = Model.KNOWN_SETTINGS[i]
+      if (spec.section !== sectionKey) continue
+      if (!pods.present(spec.id)) continue
+      if (!Model.whenShows(spec, pods.valuesMap)) continue
+      out.push(spec)
+    }
+    return out
+  }
+
+  function specById(id) {
+    for (var i = 0; i < Model.KNOWN_SETTINGS.length; i++)
+      if (Model.KNOWN_SETTINGS[i].id === id) return Model.KNOWN_SETTINGS[i]
+    return null
+  }
 
   readonly property var cursorRows: {
     var rows = []
     if (!pods.hasEarbuds) return rows
-    for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
-
-    if (pods.ancMode === Model.MODE_NOISE_CANCELING) {
-      if (pods.noiseCancelingModeSupported) rows.push("ncmode")
-      if (pods.noiseCancelingMode === Model.NC_MODE_MANUAL && pods.manualNoiseCancelingSupported) {
-        rows.push("manuallevel")
+    for (var i = 0; i < modeValues.length; i++) rows.push("mode:" + modeValues[i])
+    for (var s = 0; s < sections.length; s++) {
+      var list = root.specsFor(sections[s].key)
+      for (var j = 0; j < list.length; j++) {
+        var kind = list[j].kind
+        if (kind === "toggle" || kind === "select" || kind === "range") rows.push(list[j].id)
       }
-      if (pods.noiseCancelingMode === Model.NC_MODE_MULTI_SCENE && pods.multiSceneNoiseCancelingSupported) {
-        for (var k = 0; k < Model.SCENES.length; k++) rows.push("scene:" + Model.SCENES[k])
-      }
-      if (pods.realTimeAdaptiveNoiseCancelingSupported) rows.push("realtimeadaptive")
-      if (pods.windNoiseSuppressionSupported) rows.push("windnoise")
-    } else if (pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported) {
-      for (var m = 0; m < Model.TRANSPARENCY_MODES.length; m++) rows.push("transparency:" + Model.TRANSPARENCY_MODES[m])
     }
-
-    if (pods.spatialAudioSupported) {
-      for (var n = 0; n < Model.SOUND_EFFECTS.length; n++) rows.push("soundfx:" + Model.SOUND_EFFECTS[n])
-    }
-
     return rows
   }
 
@@ -57,9 +66,7 @@ Panel {
     ? ""
     : cursorRows[Math.max(0, Math.min(cursorIndex, cursorRows.length - 1))]
 
-  function rowHasCursor(name) {
-    return cursorActive && cursorRow === name
-  }
+  function rowHasCursor(name) { return cursorActive && cursorRow === name }
 
   function moveCursor(dy) {
     cursorActive = true
@@ -69,14 +76,14 @@ Panel {
 
   function activateCursor() {
     var name = cursorRow
-    if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
-    else if (name === "ncmode") ncModeDropdown.toggle()
-    else if (name.indexOf("scene:") === 0) pods.setMultiSceneNoiseCanceling(name.substring(6))
-    else if (name.indexOf("transparency:") === 0) pods.setTransparencyMode(name.substring(13))
-    else if (name.indexOf("soundfx:") === 0) pods.setSoundEffect(name.substring(8))
-    else if (name === "windnoise") pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
-    else if (name === "realtimeadaptive") pods.setRealTimeAdaptiveNoiseCanceling(!pods.realTimeAdaptiveNoiseCanceling)
-    // "manuallevel" has no single activation — adjusted left/right instead, see onMoveRequested.
+    if (name.indexOf("mode:") === 0) { pods.setSetting(Model.AMBIENT_SOUND_MODE, name.substring(5)); return }
+    var spec = root.specById(name)
+    if (!spec) return
+    if (spec.kind === "toggle") pods.setSetting(name, !(pods.value(name) === true))
+    else if (spec.kind === "select" || spec.kind === "range") {
+      var d = root._dropdowns[name]
+      if (d) d.toggle()
+    }
   }
 
   function focusRow(name) {
@@ -109,7 +116,7 @@ Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { pods.refresh(); return "ok" }
-    function status(): string { return Model.modeLabel(pods.ancMode) }
+    function status(): string { return Model.modeLabel(pods.currentMode()) }
   }
 
   BarIconButton {
@@ -122,12 +129,12 @@ Panel {
           anchors.centerIn: parent
           iconSize: Style.space(12)
           color: root.barIconColor
+          type: pods.deviceType
+          fontFamily: root.fontFamily
         }
       }
     }
-    onPressed: function (buttonCode) {
-      root.toggle()
-    }
+    onPressed: function (buttonCode) { root.toggle() }
   }
 
   KeyboardPanel {
@@ -138,26 +145,13 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(340))
-    // Raised from 460: with per-mode ANC settings and Sound Effects, the panel
-    // now regularly grows past what fit when it only showed battery + 3 modes.
-    // fittedContentHeight still further clamps this to available screen space,
-    // so this is a ceiling, not a fixed size — the Flickable below scrolls
-    // anything still taller than that (e.g. Multi-Scene expanded to the max).
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(640))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
-      // handling) — without this our own Keys.priority: BeforeItem would
-      // swallow them first and the popup's list would never scroll or close.
-      blocked: ncModeDropdown.popupOpen
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
-        if (root.cursorRow === "manuallevel" && dx !== 0) {
-          pods.setManualNoiseCancelingLevel(pods.manualNoiseCancelingLevel + dx)
-          return
-        }
         if (dy !== 0) root.moveCursor(dy)
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
@@ -167,10 +161,12 @@ Panel {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
         else if (!pods.hasEarbuds) return
-        else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
-        else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
-        else if (key === "o") pods.setAncMode(Model.MODE_NORMAL)
-        else if (key === "w" && pods.ancMode === Model.MODE_NOISE_CANCELING && pods.windNoiseSuppressionSupported) pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
+        else if (key === "n") pods.setSetting(Model.AMBIENT_SOUND_MODE, Model.MODE_NOISE_CANCELING)
+        else if (key === "t") pods.setSetting(Model.AMBIENT_SOUND_MODE, Model.MODE_TRANSPARENCY)
+        else if (key === "o") pods.setSetting(Model.AMBIENT_SOUND_MODE, Model.MODE_NORMAL)
+        else if (key === "w" && pods.value(Model.AMBIENT_SOUND_MODE) === Model.MODE_NOISE_CANCELING
+                 && pods.present(Model.WIND_NOISE_SUPPRESSION))
+          pods.setSetting(Model.WIND_NOISE_SUPPRESSION, !(pods.value(Model.WIND_NOISE_SUPPRESSION) === true))
       }
 
       Flickable {
@@ -187,17 +183,14 @@ Panel {
         Column {
           id: column
           width: panelFlick.width
-          spacing: Style.space(12)
+          spacing: Style.space(10)
 
           PanelHero {
             id: hero
             width: parent.width
             title: Model.modelDisplayName(pods.model)
-            meta: pods.hasEarbuds
-              ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
-                  ? " · " + Model.ncSubModeLabel(pods.noiseCancelingMode) : "")
-              : pods.lastError !== "" ? pods.lastError
-              : "Checking…"
+            meta: pods.hasEarbuds ? Model.modeLabel(pods.currentMode())
+                                  : (pods.lastError !== "" ? pods.lastError : "Checking…")
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconOpacity: pods.hasEarbuds ? 1.0 : 0.5
@@ -205,6 +198,8 @@ Panel {
               SoundcoreIcon {
                 iconSize: Style.font.display
                 color: pods.hasEarbuds ? root.foreground : root.dim
+                type: pods.deviceType
+                fontFamily: root.fontFamily
               }
             }
           }
@@ -219,252 +214,69 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          Column {
-            visible: pods.hasEarbuds
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "BATTERY"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Column {
+          Repeater {
+            model: root.sections
+            delegate: Item {
+              required property var modelData
+              readonly property string sectionKey: modelData.key
+              readonly property string sectionTitle: modelData.title
+              readonly property var specs: root.specsFor(sectionKey)
+              readonly property bool hasBattery: sectionKey === "battery"
+                && Model.hasBattery(pods.schemaMap) && pods.batteryRows.length > 0
+              readonly property bool showSection: hasBattery || sectionKey === "soundMode" || specs.length > 0
               width: parent.width
-              spacing: Style.space(6)
+              implicitHeight: showSection ? content.implicitHeight : 0
 
-              LevelRow { width: parent.width; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
-              LevelRow { width: parent.width; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
-              LevelRow { width: parent.width; label: "Case"; level: pods.caseLevel; charging: false }
-            }
-          }
-
-          PanelSeparator {
-            visible: pods.hasEarbuds
-            foreground: root.foreground
-          }
-
-          Column {
-            visible: pods.hasEarbuds
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "SOUND MODE"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(6)
-
-              Repeater {
-                model: Model.MODES
-                OptionRow {
-                  required property var modelData
-                  width: parent.width
-                  rowName: "mode:" + modelData
-                  label: Model.modeLabel(modelData)
-                  selected: pods.ancMode === modelData
-                  onActivated: pods.setAncMode(modelData)
-                }
-              }
-            }
-          }
-
-          PanelSeparator {
-            visible: pods.hasEarbuds && root.ncSectionVisible
-            foreground: root.foreground
-          }
-
-          Column {
-            visible: pods.hasEarbuds && root.ncSectionVisible
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "NOISE CANCELLING"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(6)
-
-              RowLayout {
+              Column {
+                id: content
                 width: parent.width
-                visible: pods.noiseCancelingModeSupported
-                spacing: Style.space(8)
+                spacing: Style.space(10)
+                visible: showSection
 
-                Text {
-                  text: "Mode"
-                  color: root.foreground
-                  opacity: 0.75
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  Layout.preferredWidth: Style.space(50)
-                }
-
-                Dropdown {
-                  id: ncModeDropdown
-                  Layout.fillWidth: true
-                  showLabel: false
-                  value: pods.noiseCancelingMode
-                  options: root.ncModeOptions
+                PanelSectionHeader {
+                  width: parent.width
+                  text: sectionTitle
                   foreground: root.foreground
                   fontFamily: root.fontFamily
-                  hasCursor: root.rowHasCursor("ncmode")
-                  onChanged: function (v) { pods.setNoiseCancelingMode(v) }
-                  onHovered: function (h) { if (h) root.focusRow("ncmode") }
-
-                  // Selecting an option assigns Dropdown.value directly, which breaks
-                  // the binding above — this keeps it following pods's state
-                  // (settled/confirmed writes, or an external change) afterward.
-                  Binding {
-                    target: ncModeDropdown
-                    property: "value"
-                    value: pods.noiseCancelingMode
-                  }
                 }
-              }
 
-              ManualLevelRow {
-                visible: pods.noiseCancelingMode === Model.NC_MODE_MANUAL && pods.manualNoiseCancelingSupported
-                width: parent.width
-              }
-
-              Row {
-                id: sceneRow
-                visible: pods.noiseCancelingMode === Model.NC_MODE_MULTI_SCENE && pods.multiSceneNoiseCancelingSupported
-                width: parent.width
-                spacing: Style.space(6)
-
-                readonly property real cellWidth: Model.SCENES.length > 0
-                  ? (width - spacing * (Model.SCENES.length - 1)) / Model.SCENES.length
-                  : 0
-
-                Repeater {
-                  model: Model.SCENES
-                  Button {
-                    required property var modelData
-                    width: sceneRow.cellWidth
-                    text: Model.sceneLabel(modelData)
-                    fontSize: Style.font.bodySmall
-                    foreground: root.foreground
-                    fontFamily: root.fontFamily
-                    horizontalPadding: Style.spacing.controlPaddingX
-                    verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
-                    bordered: true
-                    active: pods.multiSceneNoiseCanceling === modelData
-                    hasCursor: root.rowHasCursor("scene:" + modelData)
-                    onClicked: pods.setMultiSceneNoiseCanceling(modelData)
-                    onHovered: function (h) { if (h) root.focusRow("scene:" + modelData) }
-                  }
-                }
-              }
-
-              // Independent of noiseCancelingMode, same as Soundcore's own app.
-              // Placed directly above Wind Noise Suppression so the two
-              // toggles always sit together, regardless of which mode-specific
-              // row (manual level / multi-scene) is showing above them.
-              ToggleRow {
-                visible: pods.realTimeAdaptiveNoiseCancelingSupported
-                width: parent.width
-                rowName: "realtimeadaptive"
-                label: "Real-time Adaptive ANC"
-                on: pods.realTimeAdaptiveNoiseCanceling
-                onActivated: pods.setRealTimeAdaptiveNoiseCanceling(!pods.realTimeAdaptiveNoiseCanceling)
-              }
-
-              ToggleRow {
-                visible: pods.windNoiseSuppressionSupported
-                width: parent.width
-                rowName: "windnoise"
-                label: "Wind Noise Suppression"
-                on: pods.windNoiseSuppression
-                onActivated: pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
-              }
-            }
-          }
-
-          PanelSeparator {
-            visible: pods.hasEarbuds && root.transparencySectionVisible
-            foreground: root.foreground
-          }
-
-          Column {
-            visible: pods.hasEarbuds && root.transparencySectionVisible
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "TRANSPARENCY"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(6)
-
-              Repeater {
-                model: Model.TRANSPARENCY_MODES
-                OptionRow {
-                  required property var modelData
+                Column {
                   width: parent.width
-                  rowName: "transparency:" + modelData
-                  label: Model.transparencyModeLabel(modelData)
-                  selected: pods.transparencyMode === modelData
-                  onActivated: pods.setTransparencyMode(modelData)
-                }
-              }
-            }
-          }
+                  spacing: Style.space(6)
 
-          PanelSeparator {
-            visible: pods.hasEarbuds && pods.spatialAudioSupported
-            foreground: root.foreground
-          }
+                  // Battery rows (single or multi).
+                  Repeater {
+                    model: hasBattery ? pods.batteryRows : []
+                    delegate: LevelRow {
+                      required property var modelData
+                      width: parent.width
+                      label: modelData.label
+                      level: modelData.level
+                      charging: modelData.charging
+                    }
+                  }
 
-          Column {
-            visible: pods.hasEarbuds && pods.spatialAudioSupported
-            width: parent.width
-            spacing: Style.space(10)
+                  // Sound-mode picker (the three modes).
+                  Repeater {
+                    model: sectionKey === "soundMode" ? root.modeValues : []
+                    delegate: OptionRow {
+                      required property var modelData
+                      width: parent.width
+                      rowName: "mode:" + modelData
+                      label: Model.modeLabel(modelData)
+                      selected: pods.value(Model.AMBIENT_SOUND_MODE) === modelData
+                      onActivated: pods.setSetting(Model.AMBIENT_SOUND_MODE, modelData)
+                    }
+                  }
 
-            PanelSectionHeader {
-              text: "SOUND EFFECTS"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Row {
-              id: soundEffectRow
-              width: parent.width
-              spacing: Style.space(6)
-
-              readonly property real cellWidth: Model.SOUND_EFFECTS.length > 0
-                ? (width - spacing * (Model.SOUND_EFFECTS.length - 1)) / Model.SOUND_EFFECTS.length
-                : 0
-
-              Repeater {
-                model: Model.SOUND_EFFECTS
-                Button {
-                  required property var modelData
-                  width: soundEffectRow.cellWidth
-                  text: Model.soundEffectLabel(modelData)
-                  fontSize: Style.font.bodySmall
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  horizontalPadding: Style.spacing.controlPaddingX
-                  verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
-                  bordered: true
-                  active: pods.soundEffect === modelData
-                  hasCursor: root.rowHasCursor("soundfx:" + modelData)
-                  onClicked: pods.setSoundEffect(modelData)
-                  onHovered: function (h) { if (h) root.focusRow("soundfx:" + modelData) }
+                  // Other rows in this section (sub-modes, toggles, selects, info…).
+                  Repeater {
+                    model: specs
+                    delegate: SpecRow {
+                      required property var modelData
+                      spec: modelData
+                    }
+                  }
                 }
               }
             }
@@ -485,13 +297,15 @@ Panel {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Row components
+  // ---------------------------------------------------------------------
+
   component LevelRow: Item {
     id: levelRow
     property string label: ""
     property int level: Model.LEVEL_UNKNOWN
     property bool charging: false
-
-    readonly property bool low: level !== Model.LEVEL_UNKNOWN && level <= pods.lowBatteryPercent && !charging
 
     implicitHeight: levelLayout.implicitHeight
 
@@ -509,7 +323,6 @@ Panel {
         font.pixelSize: Style.font.bodySmall
         Layout.preferredWidth: Style.space(44)
       }
-
       Rectangle {
         id: meterTrack
         Layout.fillWidth: true
@@ -517,15 +330,13 @@ Panel {
         implicitHeight: Style.space(6)
         radius: height / 2
         color: Qt.darker(root.foreground, 3.2)
-
         Rectangle {
           width: meterTrack.width * Model.levelFraction(levelRow.level)
           height: parent.height
           radius: parent.radius
-          color: levelRow.low ? root.urgent : root.foreground
+          color: (levelRow.level !== Model.LEVEL_UNKNOWN && levelRow.level <= pods.lowBatteryPercent) ? root.urgent : root.foreground
         }
       }
-
       Text {
         text: Model.levelText(levelRow.level)
         color: root.foreground
@@ -534,7 +345,6 @@ Panel {
         horizontalAlignment: Text.AlignRight
         Layout.preferredWidth: Style.space(38)
       }
-
       Text {
         text: levelRow.charging ? "Charging" : ""
         color: root.dim
@@ -546,9 +356,6 @@ Panel {
     }
   }
 
-  // Generic checkmark-list row, reused for ambient sound mode, ANC sub-mode,
-  // multi-scene, transparency mode and sound effects — every setting in this
-  // panel where the widget picks exactly one value out of a fixed list.
   component OptionRow: CursorSurface {
     id: optionRow
     property string rowName: ""
@@ -567,7 +374,6 @@ Panel {
       onEntered: root.focusRow(optionRow.rowName)
       onClicked: optionRow.activated()
     }
-
     RowLayout {
       anchors.left: parent.left
       anchors.right: parent.right
@@ -575,7 +381,6 @@ Panel {
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
       spacing: Style.space(8)
-
       Text {
         id: optionLabel
         Layout.fillWidth: true
@@ -586,7 +391,6 @@ Panel {
         font.pixelSize: Style.font.body
         elide: Text.ElideRight
       }
-
       Text {
         Layout.alignment: Qt.AlignVCenter
         text: "󰄬"
@@ -598,7 +402,6 @@ Panel {
     }
   }
 
-  // Generic toggle row, reused for wind noise suppression and real-time adaptive ANC.
   component ToggleRow: CursorSurface {
     id: toggleRow
     property string rowName: ""
@@ -606,22 +409,18 @@ Panel {
     property bool on: false
     signal activated()
 
-    // Unlike the checkmark-list rows, only the switch itself is
-    // clickable/hoverable — the row surface never paints a cursor fill/border
-    // of its own, so hovering the label doesn't light up the whole row. The
-    // switch shows its own compact cursor ring instead (below).
     foreground: root.foreground
-    implicitHeight: Math.max(toggleLabel.implicitHeight, toggleSwitch.implicitHeight)
+    implicitHeight: rowLabel.implicitHeight > toggleSwitch.implicitHeight
+      ? rowLabel.implicitHeight
+      : toggleSwitch.implicitHeight
 
-    // Flush with the Mode row above — no row background to pad out to here.
     RowLayout {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(8)
-
       Text {
-        id: toggleLabel
+        id: rowLabel
         Layout.fillWidth: true
         text: toggleRow.label
         color: root.foreground
@@ -630,17 +429,15 @@ Panel {
         font.pixelSize: Style.font.body
         elide: Text.ElideRight
       }
-
       ToggleSwitch {
         id: toggleSwitch
         Layout.alignment: Qt.AlignVCenter
-        trackHeight: Math.round(toggleLabel.font.pixelSize * 1.2)
+        trackHeight: Math.round(rowLabel.font.pixelSize * 1.2)
         checked: toggleRow.on
         interactive: false
         cursorRing: true
         hasCursor: root.rowHasCursor(toggleRow.rowName)
         foreground: root.foreground
-
         MouseArea {
           anchors.fill: parent
           hoverEnabled: true
@@ -652,74 +449,91 @@ Panel {
     }
   }
 
-  // manualNoiseCanceling's 1-5 intensity level: click a segment to jump straight
-  // to it, or move the keyboard cursor here and use left/right to step by one.
-  component ManualLevelRow: CursorSurface {
-    id: levelRow
+  // Generic renderer for a known setting: toggle switch, select/range dropdown,
+  // or read-only info line, based on spec.kind.
+  component SpecRow: Item {
+    id: specRow
+    property var spec
+    readonly property string specId: spec ? (spec.id || "") : ""
+    readonly property string label: spec ? (spec.label || "") : ""
+    readonly property string kind: spec ? (spec.kind || "") : ""
+    readonly property string unit: spec ? (spec.unit || "") : ""
+    readonly property var currentValue: pods.value(specId)
 
-    readonly property string rowName: "manuallevel"
-    readonly property int level: pods.manualNoiseCancelingLevel
+    implicitHeight: kind === "toggle" ? toggleBody.implicitHeight
+      : (kind === "select" || kind === "range") ? selectBody.implicitHeight
+      : infoBody.implicitHeight
 
-    hasCursor: root.rowHasCursor(rowName)
-    foreground: root.foreground
-    implicitHeight: levelLabel.implicitHeight + Style.spacing.rowPaddingX
+    width: parent ? parent.width : 0
 
-    MouseArea {
-      anchors.fill: parent
-      hoverEnabled: true
-      onEntered: root.focusRow(levelRow.rowName)
+    ToggleRow {
+      id: toggleBody
+      visible: specRow.kind === "toggle"
+      width: specRow.width
+      rowName: specRow.specId
+      label: specRow.label
+      on: specRow.currentValue === true
+      onActivated: pods.setSetting(specRow.specId, !(specRow.currentValue === true))
     }
 
     RowLayout {
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      anchors.leftMargin: Style.space(10)
-      anchors.rightMargin: Style.space(10)
+      id: selectBody
+      visible: specRow.kind === "select" || specRow.kind === "range"
+      width: specRow.width
       spacing: Style.space(8)
 
       Text {
-        id: levelLabel
-        text: "Level"
+        text: specRow.label
         color: root.foreground
         opacity: 0.75
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
-        Layout.preferredWidth: Style.space(44)
+        Layout.preferredWidth: Style.space(110)
       }
-
-      Row {
-        Layout.alignment: Qt.AlignVCenter
-        spacing: Style.space(4)
-
-        Repeater {
-          model: Model.MANUAL_LEVEL_MAX
-          Rectangle {
-            required property int index
-            readonly property int segmentLevel: index + 1
-            width: Style.space(22)
-            height: Style.space(10)
-            radius: Style.space(2)
-            color: segmentLevel <= levelRow.level ? root.foreground : Qt.darker(root.foreground, 3.2)
-
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: { root.focusRow(levelRow.rowName); pods.setManualNoiseCancelingLevel(segmentLevel) }
-            }
-          }
+      Dropdown {
+        id: dd
+        Layout.fillWidth: true
+        showLabel: false
+        value: specRow.currentValue === undefined ? "" : String(specRow.currentValue)
+        options: specRow.kind === "range"
+          ? Model.rangeObjects(pods.schemaMap, specRow.specId, specRow.unit)
+          : Model.optionObjects(pods.schemaMap, specRow.specId)
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        hasCursor: root.rowHasCursor(specRow.specId)
+        onChanged: function (v) { pods.setSetting(specRow.specId, v) }
+        onHovered: function (h) { if (h) root.focusRow(specRow.specId) }
+        Component.onCompleted: { if (root) root._dropdowns[specRow.specId] = dd }
+        Component.onDestruction: { if (root) delete root._dropdowns[specRow.specId] }
+        Binding {
+          target: dd
+          property: "value"
+          value: specRow.currentValue === undefined ? "" : String(specRow.currentValue)
         }
       }
+    }
 
-      Item { Layout.fillWidth: true }
-
+    RowLayout {
+      id: infoBody
+      visible: specRow.kind === "info"
+      width: specRow.width
+      spacing: Style.space(8)
       Text {
-        text: levelRow.level > 0 ? String(levelRow.level) : "--"
+        text: specRow.label
         color: root.foreground
+        opacity: 0.75
         font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        Layout.preferredWidth: Style.space(16)
-        horizontalAlignment: Text.AlignRight
+        font.pixelSize: Style.font.body
+        Layout.preferredWidth: Style.space(110)
+      }
+      Text {
+        Layout.fillWidth: true
+        text: specRow.currentValue === undefined || specRow.currentValue === null ? "—" : String(specRow.currentValue)
+        color: root.foreground
+        opacity: 0.85
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
       }
     }
   }
