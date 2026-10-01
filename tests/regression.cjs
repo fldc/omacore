@@ -328,3 +328,6 @@ assert.equal(model.barBatteryText(0, 90, 80, 100), '');
 assert.equal(model.barBatteryText(1, 90, 80, 100), '80%');
 assert.equal(model.barBatteryText(1, -1, -1, 60), '60%');
 assert.equal(model.barBatteryText(2, 90, -1, 100), 'L 90% · R — · C 100%');
+
+// Bluetooth names remain data through discovery, parsing and Qt Quick rendering.
+require('./bluetooth_names.cjs');

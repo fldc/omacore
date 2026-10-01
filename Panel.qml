@@ -683,6 +683,7 @@ Panel {
 
             Text {
               width: parent.width
+              textFormat: Text.PlainText
               text: pods.unregisteredName + " is paired over Bluetooth, but nothing is registered with OpenSCQ30 yet — the model id in its database also tells this widget which device it is."
               color: root.foreground
               font.family: root.fontFamily
@@ -1724,6 +1725,7 @@ Panel {
       Text {
         id: connectionLabel
         Layout.fillWidth: true
+        textFormat: Text.PlainText
         text: connectionRow.label
         color: root.foreground
         font.family: root.fontFamily
