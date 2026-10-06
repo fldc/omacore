@@ -3,6 +3,7 @@
 // OpenSCQ30 SettingId values (camelCase, as the CLI's -g/-s flags expect).
 // These IDs are stable across models — the same setting always has the same ID.
 var SETTING_AMBIENT_SOUND_MODE = "ambientSoundMode"
+var SETTING_BATTERY_SINGLE = "batteryLevel"
 var SETTING_BATTERY_LEFT = "batteryLevelLeft"
 var SETTING_BATTERY_RIGHT = "batteryLevelRight"
 var SETTING_BATTERY_CASE = "caseBatteryLevel"
@@ -68,6 +69,24 @@ var SPATIAL_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMI
 
 var LEVEL_UNKNOWN = -1
 
+// Over-ear / on-ear headphone models (single battery, no charging case). The
+// widget uses this to draw a headphone icon and a single battery row instead of
+// the earbuds left/right/case layout. Keep in sync with `openscq30 list-models`.
+var HEADPHONE_MODELS = {
+  "SoundcoreA3004": true, "SoundcoreA3005": true, "SoundcoreA3027": true,
+  "SoundcoreA3028": true, "SoundcoreA3029": true, "SoundcoreA3030": true,
+  "SoundcoreA3031": true, "SoundcoreA3033": true, "SoundcoreA3035": true,
+  "SoundcoreA3040": true, "SoundcoreA3062": true
+}
+
+function isHeadphoneModel(modelId) {
+  return HEADPHONE_MODELS[String(modelId || "")] === true
+}
+
+function modelDeviceType(modelId) {
+  return isHeadphoneModel(modelId) ? "headphones" : "earbuds"
+}
+
 function barBatteryLevel(left, right, caseLevel) {
   var levels = [left, right].filter(function (level) { return level !== LEVEL_UNKNOWN && level >= 0 })
   if (levels.length) return Math.min.apply(null, levels)
@@ -82,6 +101,11 @@ var ELIDED_ERROR_CHARS = 137
 function modelDisplayName(modelId) {
   if (modelId === "SoundcoreD1202C") return "Soundcore R60i NC"
   if (modelId === "SoundcoreD1202") return "Soundcore P31i"
+  if (modelId === "SoundcoreA3040") return "Soundcore Space Q45"
+  if (modelId === "SoundcoreA3035") return "Soundcore Space One"
+  if (modelId === "SoundcoreA3062") return "Soundcore Space One Pro"
+  if (modelId === "SoundcoreA3028") return "Soundcore Q30 / Life Q30"
+  if (modelId === "SoundcoreA3027") return "Soundcore Life Q35"
   return "Soundcore"
 }
 
@@ -216,6 +240,7 @@ function statusFromMap(map) {
   var status = defaultStatus()
   status.ok = true
   status.ancMode = String(map[SETTING_AMBIENT_SOUND_MODE] || "")
+  status.batteryLevel = levelFromFraction(map[SETTING_BATTERY_SINGLE])
   status.leftLevel = levelFromFraction(map[SETTING_BATTERY_LEFT])
   status.rightLevel = levelFromFraction(map[SETTING_BATTERY_RIGHT])
   status.caseLevel = levelFromFraction(map[SETTING_BATTERY_CASE])
@@ -278,6 +303,7 @@ function defaultStatus() {
   return {
     ok: false,
     ancMode: "",
+    batteryLevel: LEVEL_UNKNOWN,
     leftLevel: LEVEL_UNKNOWN,
     rightLevel: LEVEL_UNKNOWN,
     caseLevel: LEVEL_UNKNOWN,

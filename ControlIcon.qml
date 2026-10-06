@@ -26,6 +26,10 @@ Canvas {
       c.beginPath(); c.roundedRect(3, 7, 22, 15, 5, 5); c.stroke()
       line(4,12,24,12)
       line(12,17,16,17)
+    } else if (kind === "battery") {
+      c.beginPath(); c.roundedRect(4, 9, 15, 11, 2, 2); c.stroke()
+      c.beginPath(); c.roundedRect(19.5, 12, 2.5, 5, 1, 1); c.fill()
+      line(7, 12.5, 7, 16.5)
     } else if (kind === "left" || kind === "right") {
       c.beginPath(); c.arc(14,14,11,0,Math.PI*2); c.stroke()
       c.font = "16px sans-serif"

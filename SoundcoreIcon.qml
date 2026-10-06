@@ -1,17 +1,21 @@
 import QtQuick
 import qs.Commons
 
-// Mirrored AirPods Pro-style earbuds: silicone tips, angled shells, short stems.
+// Device-aware icon: mirrored AirPods Pro-style earbuds (silicone tips, angled
+// shells, short stems) for earbuds, and an over-ear headphone (headband + two
+// cups) for headphones. Set `headphone` to switch between the two.
 Canvas {
   id: root
   property real iconSize: 16
   property color color: Color.foreground
+  property bool headphone: false
 
   implicitWidth: iconSize * 36 / 24
   implicitHeight: iconSize
   width: implicitWidth
   height: implicitHeight
   onColorChanged: requestPaint()
+  onHeadphoneChanged: requestPaint()
   onWidthChanged: requestPaint()
   onHeightChanged: requestPaint()
 
@@ -20,6 +24,7 @@ Canvas {
     c.reset()
     c.scale(width / 36, height / 24)
     c.fillStyle = root.color
+    c.strokeStyle = root.color
     function earbud() {
       // Silicone tip protrudes from the broad, tilted speaker housing.
       c.beginPath()
@@ -56,9 +61,30 @@ Canvas {
       c.stroke()
       c.restore()
     }
-    earbud()
-    c.translate(36, 0)
-    c.scale(-1, 1)
-    earbud()
+    function headphone() {
+      // Over-ear headphone: two rounded ear cups joined by a headband arc.
+      c.lineCap = "round"
+      c.lineJoin = "round"
+
+      c.beginPath()
+      c.roundedRect(2.5, 12, 8, 11, 3, 3)
+      c.fill()
+      c.beginPath()
+      c.roundedRect(25.5, 12, 8, 11, 3, 3)
+      c.fill()
+
+      c.lineWidth = 2.5
+      c.beginPath()
+      c.arc(18, 12, 11.5, Math.PI, 2 * Math.PI)
+      c.stroke()
+    }
+    if (root.headphone) {
+      headphone()
+    } else {
+      earbud()
+      c.translate(36, 0)
+      c.scale(-1, 1)
+      earbud()
+    }
   }
 }

@@ -13,6 +13,7 @@ Item {
 
   property bool connected: false
   property string ancMode: ""
+  property int batteryLevel: Model.LEVEL_UNKNOWN
   property int leftLevel: Model.LEVEL_UNKNOWN
   property int rightLevel: Model.LEVEL_UNKNOWN
   property int caseLevel: Model.LEVEL_UNKNOWN
@@ -117,12 +118,21 @@ Item {
   readonly property bool choosingDevice: deviceChoiceProcess.running
   readonly property bool hasEarbuds: connected
 
+  // True for over-ear / on-ear headphones (single battery, no charging case).
+  // Detected from the model id, with a fallback to the battery shape the device
+  // reports, so an unrecognised headphone model still renders correctly.
+  readonly property bool singleBatteryDetected: batteryLevel !== Model.LEVEL_UNKNOWN &&
+    leftLevel === Model.LEVEL_UNKNOWN && rightLevel === Model.LEVEL_UNKNOWN && caseLevel === Model.LEVEL_UNKNOWN
+  readonly property bool isHeadphone: Model.isHeadphoneModel(deviceModel) || singleBatteryDetected
+  readonly property string deviceNoun: isHeadphone ? "headphones" : "earbuds"
+
   readonly property int lowBatteryPercent: 20
   readonly property bool notifyEnabled: setting("notifyEnabled", true) === true
 
   property bool leftLowNotified: false
   property bool rightLowNotified: false
   property bool caseLowNotified: false
+  property bool singleLowNotified: false
   property var _notifyQueue: []
 
   property string _pendingMode: ""
@@ -199,7 +209,7 @@ Item {
     if (dependencyNoticeShown) return
     dependencyNoticeShown = true
     _notifyQueue.push({
-      headline: "Set up Omacore for Soundcore earbuds",
+      headline: "Set up Omacore for your Soundcore device",
       description: "OpenSCQ30 is missing. Click to review the pinned, hash-verified CLI installation. Nothing downloads until you confirm.",
       urgency: "normal",
       icon: notificationIcon,
@@ -284,6 +294,7 @@ Item {
       leftLowNotified = false
       rightLowNotified = false
       caseLowNotified = false
+      singleLowNotified = false
     }
     discoveredMac = parsed.mac || ""
     deviceName = parsed.name || "Soundcore"
@@ -306,6 +317,7 @@ Item {
 
     connected = true
     lastError = ""
+    batteryLevel = status.batteryLevel
     leftLevel = status.leftLevel
     rightLevel = status.rightLevel
     caseLevel = status.caseLevel
@@ -381,9 +393,12 @@ Item {
       ? _settleValue("dualConnectionsDevices", status.dualConnectionsDevices) : []
     dualConnectionsOptions = _settleValue("dualConnectionsOptions", Model.selectOptions(parsed.schema, Model.SETTING_DUAL_CONNECTIONS_DEVICES))
 
-    _checkLowBattery("leftLowNotified", "Left earbud", leftLevel, leftCharging)
-    _checkLowBattery("rightLowNotified", "Right earbud", rightLevel, rightCharging)
-    _checkLowBattery("caseLowNotified", "Case", caseLevel, false)
+    if (isHeadphone) _checkLowBattery("singleLowNotified", "Headphones", batteryLevel, false)
+    else {
+      _checkLowBattery("leftLowNotified", "Left earbud", leftLevel, leftCharging)
+      _checkLowBattery("rightLowNotified", "Right earbud", rightLevel, rightCharging)
+      _checkLowBattery("caseLowNotified", "Case", caseLevel, false)
+    }
     refreshCodec()
   }
 
@@ -488,7 +503,7 @@ Item {
 
   function _noteDisconnected(message) {
     _clearWrites()
-    if (connected) _notify("Soundcore earbuds disconnected", message, "normal")
+    if (connected) _notify("Soundcore device disconnected", message, "normal")
     connected = false
     lastError = message
     discoveredMac = ""
@@ -496,6 +511,7 @@ Item {
     leftLowNotified = false
     rightLowNotified = false
     caseLowNotified = false
+    singleLowNotified = false
   }
 
   function _checkLowBattery(flagName, label, level, charging) {

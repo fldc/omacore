@@ -149,11 +149,15 @@ Panel {
 
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
   readonly property bool showBatteryPercent: setting("showBatteryPercent", true) === true
-  readonly property int barBatteryLevel: Model.barBatteryLevel(pods.leftLevel, pods.rightLevel, pods.caseLevel)
+  readonly property int barBatteryLevel: pods.isHeadphone ? pods.batteryLevel : Model.barBatteryLevel(pods.leftLevel, pods.rightLevel, pods.caseLevel)
   property int pendingBatteryDisplay: -1
-  readonly property int batteryDisplayMode: pendingBatteryDisplay >= 0 ? pendingBatteryDisplay : Model.batteryDisplayMode(setting("batteryDisplayMode", showBatteryPercent ? 1 : 0))
+  readonly property int maxBatteryDisplayMode: pods.isHeadphone ? 1 : 2
+  readonly property int batteryDisplayMode: {
+    var mode = pendingBatteryDisplay >= 0 ? pendingBatteryDisplay : Model.batteryDisplayMode(setting("batteryDisplayMode", showBatteryPercent ? 1 : 0))
+    return Math.min(mode, maxBatteryDisplayMode)
+  }
   readonly property bool barBatteryVisible: batteryDisplayMode !== 0 && pods.hasEarbuds
-  readonly property string barBatteryText: Model.barBatteryText(batteryDisplayMode, pods.leftLevel, pods.rightLevel, pods.caseLevel)
+  readonly property string barBatteryText: pods.isHeadphone ? Model.levelText(pods.batteryLevel) : Model.barBatteryText(batteryDisplayMode, pods.leftLevel, pods.rightLevel, pods.caseLevel)
   TextMetrics { id: batteryTextMetrics; text: root.batteryDisplayMode === 2 ? [pods.leftLevel, pods.rightLevel, pods.caseLevel].map(function (level) { return level < 0 ? "—" : level + "%" }).join("") : root.barBatteryText; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -366,7 +370,7 @@ Panel {
 
   function cycleBatteryDisplay() {
     if (batteryDisplaySave.running) return
-    pendingBatteryDisplay = (batteryDisplayMode + 1) % 3
+    pendingBatteryDisplay = (batteryDisplayMode + 1) % (maxBatteryDisplayMode + 1)
     batteryDisplaySave.command = ["omarchy", "bar", "set", root.moduleName, "batteryDisplayMode", String(pendingBatteryDisplay), "--json"]
     batteryDisplaySave.running = true
   }
@@ -451,6 +455,7 @@ Panel {
             transform: Translate { y: root.barBatteryVisible && root.batteryDisplayMode === 1 ? -Style.space(1) : 0 }
             iconSize: Style.space(12)
             color: root.barIconColor
+            headphone: pods.isHeadphone
           }
           Text {
             visible: root.barBatteryVisible && root.batteryDisplayMode === 1
@@ -585,6 +590,7 @@ Panel {
               SoundcoreIcon {
                 iconSize: Style.font.display
                 color: pods.hasEarbuds ? root.foreground : root.dim
+                headphone: pods.isHeadphone
               }
             }
           }
@@ -644,7 +650,7 @@ Panel {
 
             Text {
               width: parent.width
-              text: "Omacore uses OpenSCQ30 to read and control your Soundcore earbuds. The CLI is not installed on this system."
+              text: "Omacore uses OpenSCQ30 to read and control your Soundcore headphones and earbuds. The CLI is not installed on this system."
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -762,9 +768,10 @@ Panel {
             visible: root.mainView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(8)
-            BatteryCell { width: parent.width; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
-            BatteryCell { width: parent.width; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
-            BatteryCell { width: parent.width; label: "Case"; level: pods.caseLevel }
+            BatteryCell { width: parent.width; visible: pods.isHeadphone; label: "Battery"; level: pods.batteryLevel }
+            BatteryCell { width: parent.width; visible: !pods.isHeadphone; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
+            BatteryCell { width: parent.width; visible: !pods.isHeadphone; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
+            BatteryCell { width: parent.width; visible: !pods.isHeadphone; label: "Case"; level: pods.caseLevel }
           }
 
           PanelSeparator {
@@ -1062,7 +1069,7 @@ Panel {
                   Layout.alignment: Qt.AlignVCenter
                   text: root.buttonsView && root.selectedGesture !== "" ? "Back to button controls"
                     : root.settingsView && (root.settingsDetail === "power" || root.settingsDetail === "volume") ? "Back to preferences"
-                    : root.buttonsView || root.dualView || (root.settingsView && root.settingsDetail !== "") ? "Back to Advanced Settings" : "Back to earbuds"
+                    : root.buttonsView || root.dualView || (root.settingsView && root.settingsDetail !== "") ? "Back to Advanced Settings" : "Back to " + pods.deviceNoun
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -1102,7 +1109,7 @@ Panel {
                 visible: pods.hasButtonControls
                 width: parent.width
                 rowName: "buttons"
-                title: "Earbud Controls"
+                title: pods.isHeadphone ? "Controls" : "Earbud Controls"
                 subtitle: "Customize left and right presses"
                 onActivated: root.showButtons(true)
               }
@@ -1147,7 +1154,7 @@ Panel {
               width: parent.width
               rowName: "ldac"
               visible: pods.ldacSupported
-              label: pods.switchingCodec ? "Switching codec…" : "LDAC on earbuds"
+              label: pods.switchingCodec ? "Switching codec…" : "LDAC on " + pods.deviceNoun
               on: pods.ldacEnabled
               onActivated: pods.setLdac(!pods.ldacEnabled)
             }
@@ -1187,7 +1194,7 @@ Panel {
               Text {
                 visible: pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0
                 width: parent.width
-                text: "Choose when the earbuds turn off automatically."
+                text: "Choose when the " + pods.deviceNoun + " turn off automatically."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -1363,7 +1370,7 @@ Panel {
                   spacing: Style.space(7)
 
                   PanelSectionHeader {
-                    text: sideGroup.modelData.toUpperCase() + " EARBUD"
+                    text: sideGroup.modelData.toUpperCase() + (pods.isHeadphone ? " SIDE" : " EARBUD")
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                   }
@@ -1389,7 +1396,7 @@ Panel {
                 width: parent.width
                 rowName: "resetbuttons"
                 title: root.resetButtonsArmed ? "Confirm reset" : "Reset to defaults"
-                subtitle: root.resetButtonsArmed ? "Replace every custom button action" : "Restore the earbuds' original controls"
+                subtitle: root.resetButtonsArmed ? "Replace every custom button action" : "Restore the original controls"
                 onActivated: root.confirmResetButtons()
               }
             }
