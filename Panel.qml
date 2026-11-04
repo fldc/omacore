@@ -159,6 +159,7 @@ Panel {
   readonly property bool barBatteryVisible: batteryDisplayMode !== 0 && pods.hasEarbuds
   readonly property string barBatteryText: pods.isHeadphone ? Model.levelText(pods.batteryLevel) : Model.barBatteryText(batteryDisplayMode, pods.leftLevel, pods.rightLevel, pods.caseLevel)
   TextMetrics { id: batteryTextMetrics; text: root.batteryDisplayMode === 2 ? [pods.leftLevel, pods.rightLevel, pods.caseLevel].map(function (level) { return level < 0 ? "—" : level + "%" }).join("") : root.barBatteryText; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+  FontMetrics { id: batteryFontMetrics; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -434,15 +435,24 @@ Panel {
     function status(): string { return Model.modeLabel(pods.ancMode) }
   }
 
-  BarIconButton {
+  // This is an icon + text layout, not a single optically normalized glyph.
+  // BarIconButton scales its entire iconComponent to Style.bar.iconSize,
+  // which would shrink the battery text (and the device icon) together.
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    slotSize: root.barBatteryVisible ? (bar && bar.vertical ? Style.space(root.batteryDisplayMode === 2 ? 112 : 42) : batteryTextMetrics.width + Style.space(root.batteryDisplayMode === 2 ? 82 : 30)) : Style.bar.iconSlot
-    opticalSize: slotSize
+    readonly property real slotSize: root.barBatteryVisible ? (bar && bar.vertical ? Style.space(root.batteryDisplayMode === 2 ? 112 : 42) : batteryTextMetrics.width + Style.space(root.batteryDisplayMode === 2 ? 82 : 30)) : Style.bar.iconSlot
+    fixedWidth: vertical ? -1 : slotSize
+    fixedHeight: vertical ? slotSize : -1
+    labelVisible: false
+    hasVisualContent: true
     tooltipText: ""
-    iconComponent: Component {
+    Item {
+      anchors.fill: parent
+      scale: button.pressScale
       Item {
+        anchors.fill: parent
         GridLayout {
           anchors.centerIn: parent
           columns: bar && bar.vertical ? 1 : 2
@@ -451,8 +461,6 @@ Panel {
           SoundcoreIcon {
             visible: !root.barBatteryVisible || root.batteryDisplayMode !== 2
             Layout.alignment: Qt.AlignCenter
-            // Align the drawing with the visible digits rather than the font's line box.
-            transform: Translate { y: root.barBatteryVisible && root.batteryDisplayMode === 1 ? -Style.space(1) : 0 }
             iconSize: Style.space(12)
             color: root.barIconColor
             headphone: pods.isHeadphone
@@ -461,6 +469,11 @@ Panel {
             visible: root.barBatteryVisible && root.batteryDisplayMode === 1
             Layout.alignment: Qt.AlignCenter
             text: root.barBatteryText
+            // Keep the device icon centered on the bar; optically center the
+            // digits instead, using the same figure metrics as WidgetButton.
+            transform: Translate {
+              y: button.vertical ? 0 : (batteryFontMetrics.descent - batteryFontMetrics.ascent + batteryFontMetrics.tightBoundingRect("0").height) / 2
+            }
             color: root.barIconColor
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
