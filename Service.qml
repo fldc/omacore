@@ -140,6 +140,14 @@ Item {
   property bool _pendingWindNoiseValue: false
 
   property var _pendingWrites: ({})
+  // Memory-only, bound to a device identity; never reused across reconnects.
+  property var _statusSnapshot: null
+  property double _schemaReadAt: 0
+  property bool _forceSchemaRefresh: false
+  property bool _statusUsedCache: false
+  property var _readbackIds: []
+  property var _verificationIds: []
+  property bool _fullReadbackRequired: false
   readonly property int settleHoldMs: 4000
   readonly property int actionStatusMs: 5000
 
@@ -170,9 +178,22 @@ Item {
     return Model.modeLabel(mode)
   }
 
-  function refresh() {
+  function refresh(forceSchema, readIds) {
+    if (forceSchema === true) _forceSchemaRefresh = true
     if (statusProcess.running || updating || deviceChoiceProcess.running) return
-    statusProcess.command = deviceMatch ? [statusScript, "--device-match", deviceMatch] : [statusScript]
+    var command = deviceMatch ? [statusScript, "--device-match", deviceMatch] : [statusScript]
+    _statusUsedCache = !_forceSchemaRefresh && connected && _statusSnapshot !== null &&
+      Date.now() - _schemaReadAt < 300000
+    if (_statusUsedCache) {
+      command.push("--cached-schema", JSON.stringify({mac: _statusSnapshot.mac,
+        model: _statusSnapshot.model, schema: _statusSnapshot.schema}))
+      for (var i = 0; i < (readIds || []).length; i++) command.push("--get", readIds[i])
+    } else {
+      _schemaReadAt = Date.now()
+    }
+    _verificationIds = _statusUsedCache ? (readIds || []).slice() : []
+    _forceSchemaRefresh = false
+    statusProcess.command = command
     statusProcess.running = true
     pollWatchdog.restart()
   }
@@ -257,6 +278,8 @@ Item {
     statusStale = false
     availableDevices = Array.isArray(parsed.devices) ? parsed.devices : []
     if (!parsed.connected) {
+      _statusSnapshot = null
+      _schemaReadAt = 0
       var missing = parsed.cliMissing === true
       if (missing && !cliMissing) notifyDependencyMissing()
       if (missing !== cliMissing) cliMissing = missing
@@ -282,6 +305,14 @@ Item {
         lastError = parsed.preferredMissing ? "Preferred Soundcore device is not connected. Choose another below." : "No paired Soundcore device is connected."
       }
       return
+    }
+
+    if (parsed.partial) {
+      if (!_statusSnapshot || parsed.mac !== _statusSnapshot.mac || parsed.model !== _statusSnapshot.model) {
+        _noteReadError("Partial status does not match the current device.")
+        return
+      }
+      parsed.values = Object.assign({}, _statusSnapshot.values, parsed.values)
     }
 
     cliMissing = false
@@ -315,7 +346,15 @@ Item {
       return
     }
 
+    if (_statusSnapshot) {
+      for (var key in parsed.values) {
+        if (/^firmwareVersion/.test(key) && Model.has(_statusSnapshot.values, key) &&
+            JSON.stringify(_statusSnapshot.values[key]) !== JSON.stringify(parsed.values[key]))
+          _forceSchemaRefresh = true
+      }
+    }
     connected = true
+    _statusSnapshot = {mac: parsed.mac, model: parsed.model, schema: parsed.schema, values: parsed.values}
     lastError = ""
     batteryLevel = status.batteryLevel
     leftLevel = status.leftLevel
@@ -403,11 +442,16 @@ Item {
   }
 
   function _noteReadError(message) {
+    _statusSnapshot = null
+    _schemaReadAt = 0
     statusStale = true
     lastError = message + (connected ? " Showing last known values." : " Retry with R.")
   }
 
   function _clearWrites() {
+    _readbackIds = []
+    _verificationIds = []
+    _fullReadbackRequired = false
     _actionQueue = []
     queuedActions = 0
     _pendingMode = ""
@@ -419,6 +463,7 @@ Item {
   }
 
   function _enqueue(command) {
+    _trackReadback(command)
     _actionQueue.push(command)
     queuedActions = _actionQueue.length
     settleTimer.stop()
@@ -427,6 +472,32 @@ Item {
     actionStatusTimer.stop()
     actionStatus = ""
     _pumpActions()
+  }
+
+  function _trackReadback(command) {
+    // Schema-changing operations and specialized helpers need full discovery.
+    if (command[0] !== setScript) { _fullReadbackRequired = true; return }
+    var ids = _readbackIds.slice()
+    var groups = [
+      ["ambientSoundMode", "noiseCancelingMode", "manualNoiseCanceling", "multiSceneNoiseCanceling", "realTimeAdaptiveNoiseCanceling", "windNoiseSuppression", "transparencyMode", "manualTransparency"],
+      ["ldac", "spatialAudio", "spatialAudioMode", "presetEqualizerProfile", "customEqualizerProfile", "volumeAdjustments"],
+      ["limitHighVolume", "limitHighVolumeDbLimit", "limitHighVolumeRefreshRate"],
+      ["dualConnections", "dualConnectionsDevices"]
+    ]
+    for (var i = 2; i < command.length; i++) {
+      var id = command[i].split("=")[0]
+      if (command[i].indexOf("=") < 0 || /^(ldac|customEqualizerProfile|dualConnectionsDevices)$/.test(id))
+        _fullReadbackRequired = true
+      if (ids.indexOf(id) < 0) ids.push(id)
+      for (var g = 0; g < groups.length; g++) {
+        if (groups[g].indexOf(id) < 0) continue
+        for (var j = 0; j < groups[g].length; j++) {
+          var linked = groups[g][j]
+          if (_statusSnapshot && Model.has(_statusSnapshot.values, linked) && ids.indexOf(linked) < 0) ids.push(linked)
+        }
+      }
+    }
+    _readbackIds = ids
   }
 
   function _pumpActions() {
@@ -502,6 +573,8 @@ Item {
   }
 
   function _noteDisconnected(message) {
+    _statusSnapshot = null
+    _schemaReadAt = 0
     _clearWrites()
     if (connected) _notify("Soundcore device disconnected", message, "normal")
     connected = false
@@ -780,21 +853,21 @@ Item {
     id: settleTimer
     interval: root.settleHoldMs
     repeat: false
-    onTriggered: { root._pendingMode = ""; root.refresh() }
+    onTriggered: { root._pendingMode = ""; root.refresh(false, root._verificationIds) }
   }
 
   Timer {
     id: windNoiseSettleTimer
     interval: root.settleHoldMs
     repeat: false
-    onTriggered: { root._windNoisePending = false; root.refresh() }
+    onTriggered: { root._windNoisePending = false; root.refresh(false, root._verificationIds) }
   }
 
   Timer {
     id: pendingSettleTimer
     interval: root.settleHoldMs
     repeat: false
-    onTriggered: { root._pendingWrites = {}; root.refresh() }
+    onTriggered: { root._pendingWrites = {}; root.refresh(false, root._verificationIds) }
   }
 
   Timer {
@@ -817,7 +890,7 @@ Item {
         ? Model.elideError(transferOut.text).trim()
         : "EQ transfer failed: " + (Model.elideError(transferErr.text) || "command failed")
       actionStatusTimer.restart()
-      root.refresh()
+      root.refresh(true)
       root._pumpActions()
     }
   }
@@ -860,6 +933,8 @@ Item {
       if (exitCode === 0) root.applyStatus(statusOut.text)
       else root._noteReadError(Model.elideError(statusErr.text) || "Status refresh failed or timed out.")
       root._pumpActions()
+      // One uncached retry after a cached read fails; never race queued writes.
+      if (root._forceSchemaRefresh || (root.statusStale && root._statusUsedCache)) root.refresh(true)
     }
   }
 
@@ -879,6 +954,8 @@ Item {
       actionWatchdog.stop()
       if (exitCode !== 0) {
         root._clearWrites()
+        root._statusSnapshot = null
+        root._schemaReadAt = 0
         root.actionStatusError = true
         root.actionStatus = "Update failed: " + (Model.elideError(actionErr.text) || "command failed or timed out")
         actionStatusTimer.restart()
@@ -891,7 +968,11 @@ Item {
         if (root._windNoisePending) windNoiseSettleTimer.restart()
         if (Object.keys(root._pendingWrites).length) pendingSettleTimer.restart()
       }
-      root.refresh()
+      var ids = root._readbackIds.slice()
+      var full = root._fullReadbackRequired
+      root._readbackIds = []
+      root._fullReadbackRequired = false
+      root.refresh(full, ids)
     }
   }
 

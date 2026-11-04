@@ -447,7 +447,7 @@ Panel {
     function openDual(): void { root.open(); root.showDual(true) }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function refresh(): string { pods.refresh(); return "ok" }
+    function refresh(): string { pods.refresh(true); return "ok" }
     function status(): string { return Model.modeLabel(pods.ancMode) }
   }
 
@@ -573,7 +573,7 @@ Panel {
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
-        if (key === "r") pods.refresh()
+        if (key === "r") pods.refresh(true)
         else if (key === "i" && pods.cliMissing && !pods.cliInstalling) launchInstaller()
         else if (!pods.hasEarbuds || !root.mainView) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)

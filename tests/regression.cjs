@@ -68,6 +68,7 @@ const ctx = vm.createContext({Model:model, connected:true, discoveredMac:'test-m
   limitHighVolumeSupported:false, limitHighVolume:false, limitDbSupported:false, limitDb:-1, limitDbOptions:[], limitRateSupported:false, limitRate:'', limitRateOptions:[],
   buttonBindings:{}, buttonOptions:{}, buttonResetSupported:false, hasButtonControls:false,
   _actionQueue:[], queuedActions:0, _pendingWrites:{}, _pendingMode:'', _windNoisePending:false,
+  _statusSnapshot:null, _schemaReadAt:0, _readbackIds:[], _verificationIds:[], _fullReadbackRequired:false,
   statusProcess:{running:false}, actionProcess:{running:false}, transferProcess:{running:false}, deviceChoiceProcess:{running:false},
   settleTimer:timer(), windNoiseSettleTimer:timer(), pendingSettleTimer:timer(),
   actionStatusTimer:timer(), actionWatchdog:timer(), actionStatus:'',
@@ -338,6 +339,7 @@ assert.equal(model.barBatteryText(1, -1, -1, 60), '60%');
 assert.equal(model.barBatteryText(2, 90, -1, 100), 'L 90% · R — · C 100%');
 
 require('./bar_icon.cjs');
+require('./refresh.cjs');
 
 // Bluetooth names remain data through discovery, parsing and Qt Quick rendering.
 require('./bluetooth_names.cjs');

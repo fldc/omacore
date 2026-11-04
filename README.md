@@ -149,7 +149,16 @@ CLI opens a fresh Bluetooth connection on every invocation, so this widget
 paired Soundcore device currently connected over Bluetooth (cross-referencing
 `bluetoothctl devices Connected` with OpenSCQ30's `paired-devices list`),
 reads the device's capability schema via `list-settings --json`, then fetches
-the current value of every relevant setting. The wrapper script `omacore-set`
+the current value of every relevant setting. The schema is cached in memory for
+up to five minutes per connected device. Disconnects, read/write errors, firmware
+changes, and manual refresh (`r`) invalidate or bypass it. Regular polls still
+read all current values to pick up changes made elsewhere.
+
+After ordinary setting changes, only the changed settings and their supported,
+linked settings are read back. Operations that can change available choices
+(LDAC, saved custom presets, paired-device removal, EQ import/export, and device
+connection helpers) retain a full schema/value refresh. Failed cached reads retry
+once with fresh discovery. The wrapper script `omacore-set`
 writes a setting back. Discovery runs on every poll; the panel picker sets
 `deviceMatch` when several Soundcore devices are connected.
 `omacore-codec` matches the local Bluetooth sink by MAC address and reads its

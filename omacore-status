@@ -11,9 +11,16 @@
 set -uo pipefail
 
 device_match=""
-if [ "${1:-}" = "--device-match" ]; then
-  device_match="${2:-}"
-fi
+cached_schema='{}'
+requested_ids=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --device-match) device_match="${2:?missing device match}"; shift 2 ;;
+    --cached-schema) cached_schema="${2:?missing schema}"; shift 2 ;;
+    --get) requested_ids+=("${2:?missing setting id}"); shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
 device_match="${device_match,,}"
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
@@ -110,7 +117,16 @@ if [ -z "$mac" ]; then
   exit 0
 fi
 
-schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud settings could not be read."
+schema_json=$(jq -ce --arg mac "$mac" --arg model "$model" '
+  select(.mac == $mac and .model == $model)
+  | .schema | select(type == "array" and length > 0)
+' <<<"$cached_schema" 2>/dev/null) || schema_json=''
+partial=false
+if [ -z "$schema_json" ]; then
+  schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud settings could not be read."
+elif [ "${#requested_ids[@]}" -gt 0 ]; then
+  partial=true
+fi
 jq -e 'type == "array" and length > 0' <<<"$schema_json" >/dev/null 2>&1 || read_error "No settings returned by the earbuds."
 
 filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="equalizerImportExport" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections" or .categoryId=="buttonConfiguration" or .categoryId=="limitHighVolume")]' <<<"$schema_json")
@@ -125,6 +141,16 @@ ids=$(jq -r '
 ' <<<"$schema_json" 2>/dev/null)
 
 get_args=()
+if [ "$partial" = true ]; then
+  # Only use IDs advertised by this device. Unknown IDs require a full read,
+  # rather than falsely reporting successful verification of a missing value.
+  for id in "${requested_ids[@]}"; do
+    if ! grep -Fxq -- "$id" <<<"$ids"; then partial=false; break; fi
+  done
+  if [ "$partial" = true ]; then
+    ids=$(printf '%s\n' "${requested_ids[@]}" | sort -u)
+  fi
+fi
 while IFS= read -r id; do
   [ -z "$id" ] && continue
   get_args+=(--get "$id")
@@ -134,6 +160,8 @@ values_json='[]'
 if [ "${#get_args[@]}" -gt 0 ]; then
   values_json=$("$OMACORE_CTL" device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud status could not be read."
   jq -e 'type == "array" and length > 0 and all(.[]; has("settingId") and (.value | type == "object" and has("value")))' <<<"$values_json" >/dev/null 2>&1 || read_error "Invalid earbud status response."
+  expected_ids=$(printf '%s\n' "$ids" | jq -Rsc 'split("\n") | map(select(length > 0))')
+  jq -e --argjson expected "$expected_ids" 'map(.settingId) as $actual | all($expected[]; . as $id | $actual | index($id) != null)' <<<"$values_json" >/dev/null 2>&1 || read_error "Incomplete earbud status response."
 fi
 
 values_map=$(jq '[.[] | {(.settingId): .value.value}] | add // {}' <<<"$values_json")
@@ -144,5 +172,6 @@ jq -n \
   --arg model "$model" \
   --argjson devices "$available_devices" \
   --argjson schema "$filtered_schema" \
+  --argjson partial "$partial" \
   --argjson values "$values_map" \
-  '{connected:true, mac:$mac, name:$name, model:$model, devices:$devices, schema:$schema, values:$values}'
+  '{connected:true, mac:$mac, name:$name, model:$model, devices:$devices, schema:$schema, values:$values, partial:$partial}'
