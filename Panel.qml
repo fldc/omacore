@@ -173,7 +173,7 @@ Panel {
   readonly property bool guidanceVisible: (!pods.hasEarbuds || pods.statusStale) && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
   readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
   readonly property bool transparencySectionVisible: pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported
-  readonly property var ncModeOptions: Model.NC_SUBMODES.map(function (m) { return { value: m, label: Model.ncSubModeLabel(m) } })
+  readonly property var ncModeOptions: pods.noiseCancelingModeOptions
 
   readonly property var cursorRows: {
     var rows = []

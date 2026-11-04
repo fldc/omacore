@@ -26,6 +26,7 @@ Item {
   property string transparencyMode: ""
   property bool noiseCancelingModeSupported: false
   property string noiseCancelingMode: ""
+  property var noiseCancelingModeOptions: []
   property bool manualNoiseCancelingSupported: false
   property int manualNoiseCancelingLevel: Model.LEVEL_UNKNOWN
   property bool multiSceneNoiseCancelingSupported: false
@@ -371,7 +372,8 @@ Item {
     transparencyModeSupported = status.transparencyModeSupported
     transparencyMode = status.transparencyModeSupported
       ? _settleValue("transparencyMode", status.transparencyMode) : ""
-    noiseCancelingModeSupported = status.noiseCancelingModeSupported
+    noiseCancelingModeOptions = Model.selectOptions(parsed.schema, Model.SETTING_NOISE_CANCELING_MODE)
+    noiseCancelingModeSupported = status.noiseCancelingModeSupported && noiseCancelingModeOptions.length > 0
     noiseCancelingMode = status.noiseCancelingModeSupported
       ? _settleValue("noiseCancelingMode", status.noiseCancelingMode) : ""
     manualNoiseCancelingSupported = status.manualNoiseCancelingSupported
@@ -667,6 +669,7 @@ Item {
 
   function setNoiseCancelingMode(mode) {
     if (mode === "" || !connected || !noiseCancelingModeSupported || discoveredMac === "") return
+    if (!noiseCancelingModeOptions.some(function (option) { return option.value === mode })) return
     _beginWrite("noiseCancelingMode", mode)
     _enqueue([setScript, discoveredMac, Model.SETTING_NOISE_CANCELING_MODE + "=" + mode])
   }

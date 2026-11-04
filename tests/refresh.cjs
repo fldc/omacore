@@ -134,7 +134,24 @@ elif 'setting' in a:
   ctx._noteDisconnected('Disconnected');
   assert.equal(ctx._statusSnapshot,null);
   assert.equal(ctx._schemaReadAt,0);
+  ctx.applyStatus(JSON.stringify(full));
+  assert.deepEqual(Array.from(ctx.noiseCancelingModeOptions, o => o.value), ['Manual','Adaptive']);
+  const writes = [];
+  ctx._enqueue = command => writes.push(Array.from(command));
+  ctx.setNoiseCancelingMode('MultiScene');
+  assert.equal(writes.length, 0, 'Q45 must reject unsupported Multi-Scene before writing or updating UI');
+  assert.equal(ctx.noiseCancelingMode, 'Manual');
+  ctx.setNoiseCancelingMode('Adaptive');
+  assert.equal(writes[0][2], 'noiseCancelingMode=Adaptive');
+  const multiSchema = JSON.parse(JSON.stringify(schema));
+  multiSchema[0].settings[1].setting.options.push('MultiScene');
+  multiSchema[0].settings[1].setting.localizedOptions.push('Multi-Scene');
+  ctx.applyStatus(JSON.stringify({...full,schema:multiSchema}));
+  ctx.setNoiseCancelingMode('MultiScene');
+  assert.equal(writes[1][2], 'noiseCancelingMode=MultiScene', 'supported devices keep Multi-Scene');
+  assert.match(fs.readFileSync('Panel.qml','utf8'), /ncModeOptions: pods\.noiseCancelingModeOptions/);
   console.log('PASS refresh: cached schema, selective/linked reads, full polling, identity/TTL/error/firmware invalidation and partial merges');
+  console.log('PASS ANC modes: only device-advertised choices are displayed and accepted');
 } finally {
   fs.rmSync(dir,{recursive:true,force:true});
 }
