@@ -62,6 +62,8 @@ elif 'setting' in a:
   assert.equal(result.data.partial, false);
   assert.equal(Object.keys(result.data.values).length, 3);
   assert.equal(run(args, {TEST_FAIL:'1'}).data.readError, true);
+  assert.equal(run(args, {TEST_FAIL:'1'}).data.error, 'Bluetooth is connected, but the device status could not be read.');
+  assert.ok(!/earbud/i.test(fs.readFileSync('omacore-status','utf8')), 'status errors must be device-neutral');
   assert.equal(run([...args,'--get','ambientSoundMode','--get','noiseCancelingMode'], {TEST_INCOMPLETE:'1'}).data.readError, true);
   assert.equal(run(args, {TEST_DISCONNECTED:'1'}).data.connected, false);
 

@@ -123,11 +123,11 @@ schema_json=$(jq -ce --arg mac "$mac" --arg model "$model" '
 ' <<<"$cached_schema" 2>/dev/null) || schema_json=''
 partial=false
 if [ -z "$schema_json" ]; then
-  schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud settings could not be read."
+  schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the device settings could not be read."
 elif [ "${#requested_ids[@]}" -gt 0 ]; then
   partial=true
 fi
-jq -e 'type == "array" and length > 0' <<<"$schema_json" >/dev/null 2>&1 || read_error "No settings returned by the earbuds."
+jq -e 'type == "array" and length > 0' <<<"$schema_json" >/dev/null 2>&1 || read_error "No settings returned by the device."
 
 filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="equalizerImportExport" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections" or .categoryId=="buttonConfiguration" or .categoryId=="limitHighVolume")]' <<<"$schema_json")
 
@@ -158,10 +158,10 @@ done <<<"$ids"
 
 values_json='[]'
 if [ "${#get_args[@]}" -gt 0 ]; then
-  values_json=$("$OMACORE_CTL" device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud status could not be read."
-  jq -e 'type == "array" and length > 0 and all(.[]; has("settingId") and (.value | type == "object" and has("value")))' <<<"$values_json" >/dev/null 2>&1 || read_error "Invalid earbud status response."
+  values_json=$("$OMACORE_CTL" device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null) || read_error "Bluetooth is connected, but the device status could not be read."
+  jq -e 'type == "array" and length > 0 and all(.[]; has("settingId") and (.value | type == "object" and has("value")))' <<<"$values_json" >/dev/null 2>&1 || read_error "Invalid device status response."
   expected_ids=$(printf '%s\n' "$ids" | jq -Rsc 'split("\n") | map(select(length > 0))')
-  jq -e --argjson expected "$expected_ids" 'map(.settingId) as $actual | all($expected[]; . as $id | $actual | index($id) != null)' <<<"$values_json" >/dev/null 2>&1 || read_error "Incomplete earbud status response."
+  jq -e --argjson expected "$expected_ids" 'map(.settingId) as $actual | all($expected[]; . as $id | $actual | index($id) != null)' <<<"$values_json" >/dev/null 2>&1 || read_error "Incomplete device status response."
 fi
 
 values_map=$(jq '[.[] | {(.settingId): .value.value}] | add // {}' <<<"$values_json")

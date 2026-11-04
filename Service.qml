@@ -342,7 +342,7 @@ Item {
     eqPreset = _settleValue("eqPreset", String((parsed.values || {})[Model.SETTING_EQ_PRESET] || ""))
     var status = Model.statusFromMap(parsed.values || {})
     if (!status.ok) {
-      _noteDisconnected("Could not read the earbuds' status.")
+      _noteDisconnected("Could not read the device status.")
       return
     }
 
