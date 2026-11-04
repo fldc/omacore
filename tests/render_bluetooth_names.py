@@ -14,7 +14,7 @@ import tempfile
 import threading
 
 payload = json.load(sys.stdin)
-runner = shutil.which('qmltestrunner') or shutil.which('/usr/lib/qt6/bin/qmltestrunner')
+runner = shutil.which('/usr/lib/qt6/bin/qmltestrunner') or shutil.which('qmltestrunner')
 if not runner:
     print('SKIP runtime: Qt Quick Test runner unavailable (static/discovery checks passed).')
     sys.exit(0)
@@ -29,9 +29,9 @@ class Probe(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-# Deliberately fail if this fixed loopback port is occupied; never use an
-# external endpoint or mistake an unobserved renderer for a passing test.
-server = http.server.ThreadingHTTPServer(('127.0.0.1', 8765), Probe)
+# Ask the OS for a free loopback port; the rich-text control still proves the
+# observer is active, without colliding with unrelated local services.
+server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Probe)
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 try:
@@ -65,7 +65,8 @@ TestCase {
     }
 }
 ''' % (name, name, items, refs, checks)
-    with tempfile.TemporaryDirectory(prefix='omacore-qml-') as directory:
+    qml = qml.replace('127.0.0.1:8765/', '127.0.0.1:%d/' % server.server_port)
+    with tempfile.TemporaryDirectory(prefix='omacore-qml-', dir='/tmp/opencode') as directory:
         Path(directory, 'tst_names.qml').write_text(qml)
         result = subprocess.run([runner, '-input', directory], text=True,
                                 capture_output=True, timeout=15,
@@ -74,7 +75,7 @@ TestCase {
         print(result.stdout, end='')
         if result.returncode:
             print(result.stderr, file=sys.stderr)
-            raise AssertionError('Qt Quick rendering failed')
+            raise AssertionError('Qt Quick rendering failed (exit %d)' % result.returncode)
     assert '/control.png' in requests, 'rich-text control did not reach loopback observer'
     assert '/probe.png' not in requests, requests
     print('PASS runtime: both extracted Text sinks retain literal text and plain-text layout; zero /probe.png image requests (rich-text control observed).')
