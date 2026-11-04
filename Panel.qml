@@ -156,7 +156,7 @@ Panel {
     var mode = pendingBatteryDisplay >= 0 ? pendingBatteryDisplay : Model.batteryDisplayMode(setting("batteryDisplayMode", showBatteryPercent ? 1 : 0))
     return Math.min(mode, maxBatteryDisplayMode)
   }
-  readonly property bool barBatteryVisible: batteryDisplayMode !== 0 && pods.hasEarbuds
+  readonly property bool barBatteryVisible: showBatteryPercent && batteryDisplayMode !== 0 && pods.hasEarbuds
   readonly property string barBatteryText: pods.isHeadphone ? Model.levelText(pods.batteryLevel) : Model.barBatteryText(batteryDisplayMode, pods.leftLevel, pods.rightLevel, pods.caseLevel)
   TextMetrics { id: batteryTextMetrics; text: root.batteryDisplayMode === 2 ? [pods.leftLevel, pods.rightLevel, pods.caseLevel].map(function (level) { return level < 0 ? "—" : level + "%" }).join("") : root.barBatteryText; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
   FontMetrics { id: batteryFontMetrics; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
@@ -214,10 +214,11 @@ Panel {
         if (pods.ldacSupported || pods.hostCodec !== "") rows.push("detail:audio")
         if (pods.dualConnectionsSupported) rows.push("dual")
         if (pods.hasButtonControls) rows.push("buttons")
-        if (pods.autoPowerOffSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || pods.limitHighVolumeSupported) rows.push("detail:preferences")
+        rows.push("detail:preferences")
         if (pods.eqTransferSupported) rows.push("detail:transfer")
         if (deviceInfoRows.length > 0) rows.push("detail:info")
       } else if (settingsDetail === "preferences") {
+        rows.push("barbattery")
         if (pods.autoPowerOffSupported && pods.autoPowerOffOptions.length) rows.push("detail:power")
         if (pods.touchToneSupported) rows.push("touchtone")
         if (pods.lowBatteryPromptSupported) rows.push("lowprompt")
@@ -383,6 +384,21 @@ Panel {
         root.pendingBatteryDisplay = -1
         pods.actionStatusError = true
         pods.actionStatus = "Could not save battery display preference."
+      }
+    }
+  }
+  function toggleBarBatteryPercent() {
+    if (barBatteryPercentSave.running) return
+    barBatteryPercentSave.command = ["omarchy", "bar", "set", root.moduleName, "showBatteryPercent", String(!root.showBatteryPercent), "--json"]
+    barBatteryPercentSave.running = true
+  }
+
+  Process {
+    id: barBatteryPercentSave
+    onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        pods.actionStatusError = true
+        pods.actionStatus = "Could not save bar battery percentage preference."
       }
     }
   }
@@ -1127,11 +1143,10 @@ Panel {
                 onActivated: root.showButtons(true)
               }
               NavigationRow {
-                visible: pods.autoPowerOffSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || pods.limitHighVolumeSupported
                 width: parent.width
                 rowName: "detail:preferences"
                 title: "Preferences"
-                subtitle: "Power, tones and volume limit"
+                subtitle: "Bar display, power, tones and volume limit"
                 onActivated: root.showDetail("preferences")
               }
               NavigationRow {
@@ -1232,6 +1247,16 @@ Panel {
               visible: root.settingsView && root.settingsDetail === "preferences"
               width: parent.width
               spacing: Style.space(10)
+              PanelSectionHeader { text: "BAR DISPLAY"; foreground: root.foreground; fontFamily: root.fontFamily }
+              ToggleRow {
+                width: parent.width
+                rowName: "barbattery"
+                label: "Show battery percentage in bar"
+                fullRow: true
+                on: root.showBatteryPercent
+                onActivated: root.toggleBarBatteryPercent()
+              }
+              PanelSeparator { foreground: root.foreground }
               NavigationRow {
                 visible: pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0
                 width: parent.width

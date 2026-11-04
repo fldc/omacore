@@ -68,7 +68,9 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
   hardware only reports ten discrete steps, so the widget shows a rounded
   percent rather than a raw sensor value. By default the bar also shows the
   lowest known earbud percentage (or the case percentage when neither bud
-  reports one). Right-click cycles icon only, one percentage, and all three
+  reports one). Disable **Show battery percentage in bar** under **gear → Preferences**
+  to show only the device icon; this also applies to headphones. With it enabled,
+  right-click cycles icon only, one percentage, and all three
   percentages with circled L/R and case icons, and saves the choice. Each battery on the
   home page has an compact row with a circled L/R or case icon, label, thin theme-colored bar, and right-aligned percentage. A low
   reading colors the bar indicator with the theme's alert color.

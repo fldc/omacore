@@ -36,6 +36,13 @@
         "defaultValue": 30
       },
       {
+        "key": "showBatteryPercent",
+        "type": "boolean",
+        "label": "Show battery percentage in bar",
+        "defaultValue": true,
+        "description": "Disable to show only the device icon, regardless of the battery display mode."
+      },
+      {
         "key": "batteryDisplayMode",
         "type": "integer",
         "label": "Bar battery display (0: icon, 1: lowest, 2: all)",

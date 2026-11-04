@@ -53,6 +53,7 @@ assert.ok(!ctx.rows().includes('ncmode'));
 assert.ok(ctx.rows().includes('buttons'));
 state.panelFlick.contentY = 120;
 ctx.showDetail('preferences');
+assert.ok(ctx.rows().includes('barbattery'));
 state.panelFlick.contentY = 45;
 ctx.showDetail('power');
 assert.deepEqual(Array.from(ctx.rows()), ['back','power:30m']);
@@ -80,6 +81,12 @@ ctx.showDetail('volume'); ctx.goBack();
 assert.equal(state.pageKey, 'settings/preferences');
 ctx.showEffects(true); ctx.goBack();
 assert.equal(state.pageKey, 'main');
+ctx.showSettings(true);
+Object.assign(state.pods, {autoPowerOffSupported:false, touchToneSupported:false,
+  lowBatteryPromptSupported:false, limitHighVolumeSupported:false});
+assert.ok(ctx.rows().includes('detail:preferences'), 'local widget preferences are always available');
+ctx.showDetail('preferences');
+assert.deepEqual(Array.from(ctx.rows()), ['back', 'barbattery']);
 console.log('Navigation checks passed: parent pages, scroll restoration, keyboard targets and feature placement.');
 
 // Hidden sections must never capture a cursor target with the same name.
